@@ -29,8 +29,11 @@ except:
 #   STOPWORDS
 # =========================
 stop_id = set(stopwords.words("indonesian"))
-extra_stop = {"yang", "dan", "di", "ke", "dari", "pada", "untuk",
-              "adalah", "dengan", "atau", "sebagai", "apa", "saya"}
+extra_stop = {
+    "yang", "dan", "di", "ke", "dari", "pada", "untuk",
+    "adalah", "dengan", "atau", "sebagai", "apa", "saya",
+    "itu", "ini", "karena", "jika"
+}
 stop_id |= extra_stop
 
 
@@ -54,65 +57,83 @@ def clean_text(text):
 
     tokens = tokenize(text)
     tokens_clean = [t for t in tokens if t not in stop_id]
-    
-    # gunakan stemmer indonesia (lebih akurat)
+
     try:
         tokens_stem = [stemmer.stem(t) for t in tokens_clean]
     except:
         tokens_stem = tokens_clean
 
-    clean = " ".join(tokens_stem)
-
-    return clean
+    return " ".join(tokens_stem)
 
 
 # =========================
-#  LOAD DATASET FIX
+#  LOAD DATASET SUPER FIX
 # =========================
 DATA_PATH = "translated_computer_science_dataset.csv"
 
 @st.cache_data
 def load_dataset(path=DATA_PATH):
-    df = pd.read_csv(path, engine="python", on_bad_lines="skip")
+    encodings = ["utf-8", "utf-8-sig", "latin1"]
 
-    # Perbaiki header yang rusak ;;;;;;;;;;;;;;;;;;
-    new_cols = []
+    df = None
+    for enc in encodings:
+        try:
+            df = pd.read_csv(path, encoding=enc, engine="python", on_bad_lines="skip")
+            break
+        except:
+            continue
+
+    if df is None:
+        st.error("❌ Dataset gagal dibaca dengan semua encoding.")
+        return None
+
+    # ========== perbaiki header ==========
+    cleaned_cols = []
     for c in df.columns:
-        c = c.strip().replace("\ufeff", "")
-        c = c.split(";")[0]
-        new_cols.append(c)
-    df.columns = new_cols
+        c = str(c).strip().replace("\ufeff", "")
+        c = c.split(";")[0]  # hilangkan ;;;;
+        cleaned_cols.append(c)
 
-    # Bersihkan jawaban dari ;;;;;;
+    df.columns = cleaned_cols
+
+    # ========== bersihkan isi dataset ==========
     df = df.replace({";+": ""}, regex=True)
 
-    if "input_id" not in df.columns or "output_id" not in df.columns:
-        st.error(f"Dataset rusak, kolom ditemukan: {df.columns}")
-        st.stop()
+    # ========== validasi kolom ==========
+    required = ["input_id", "output_id"]
+    if any(col not in df.columns for col in required):
+        st.error(f"""
+        ❌ Dataset tidak memiliki kolom lengkap.
 
-    return df[["input_id", "output_id"]].dropna().reset_index(drop=True)
+        Kolom ditemukan:
+        {list(df.columns)}
+
+        Kolom wajib:
+        {required}
+        """)
+        return None
+
+    df = df[["input_id", "output_id"]].dropna().reset_index(drop=True)
+    return df
 
 
 # =========================
-#       CHATBOT
+#        CHATBOT
 # =========================
 class Chatbot:
-    def __init__(self, df, threshold=0.18):
+    def __init__(self, df, threshold=0.20):
         self.df = df.copy()
         self.df["clean_input"] = self.df["input_id"].apply(clean_text)
 
-        # gunakan ngram lebih besar agar akurat seperti lokal
         self.vectorizer = TfidfVectorizer(ngram_range=(1, 3), min_df=1)
         self.tfidf_matrix = self.vectorizer.fit_transform(self.df["clean_input"])
+
         self.threshold = threshold
 
-    def get_response(self, user_text):
-        clean_user = clean_text(user_text)
+    def get_response(self, text):
+        clean_user = clean_text(text)
         vec = self.vectorizer.transform([clean_user])
         sims = cosine_similarity(vec, self.tfidf_matrix).flatten()
-
-        # penalti jarak berbasis panjang jawaban
-        sims = sims * (1 - np.abs(np.log1p(self.df["clean_input"].str.len() - len(clean_user))))
 
         best_idx = np.argmax(sims)
         best_score = sims[best_idx]
@@ -123,48 +144,47 @@ class Chatbot:
         q = self.df.loc[best_idx, "input_id"]
         a = self.df.loc[best_idx, "output_id"]
 
-        # bersihkan jawaban dari ;;;;;;;;
-        a = re.sub(r";+", "", str(a)).strip()
+        a = re.sub(r";+", "", str(a))
 
         return q, a, best_score
 
 
 # =========================
-#       UI STREAMLIT
+#     STREAMLIT UI
 # =========================
 st.set_page_config(page_title="Chatbot Ilmu Komputer", page_icon="🤖")
 
 st.title("💬 Chatbot Pembelajaran Ilmu Komputer")
-st.caption("Versi Peningkatan Akurasi • TF-IDF + N-gram 1–3 + Sastrawi Stemmer")
+st.caption("Versi Stabil • TF-IDF + N-gram 1–3 + Sastrawi Stemmer")
 st.caption("Kelompok 11")
 
 df = load_dataset()
+
+if df is None:
+    st.stop()  # hentikan UI jika dataset gagal
+
 bot = Chatbot(df)
 
 st.divider()
 
-user_input = st.text_area("Masukkan pertanyaan:", height=100)
+user_input = st.text_area("Masukkan pertanyaan Anda:", height=100)
 
 if st.button("💬 Kirim"):
     if not user_input.strip():
-        st.warning("Isi pertanyaan dulu.")
+        st.warning("Harap masukkan pertanyaan.")
     else:
         with st.spinner("Sedang mencari jawaban..."):
-            best_q, best_a, score = (
-                bot.get_response(user_input)
-                if bot.get_response(user_input)[0]
-                else (None, bot.get_response(user_input)[1], bot.get_response(user_input)[2])
-            )
+            result = bot.get_response(user_input)
 
-        st.subheader("📌 Hasil")
-
-        if best_q is None:
-            st.error(best_a)
+        if result[0] is None:
+            _, msg, score = result
+            st.error(msg)
             st.write(f"📉 Similarity: `{score:.5f}`")
         else:
+            q, a, score = result
             st.success("Jawaban ditemukan!")
-            st.write(f"**🔎 Pertanyaan mirip:** {best_q}")
-            st.write(f"**💬 Jawaban:** {best_a}")
+            st.write(f"**🔎 Pertanyaan paling mirip:** {q}")
+            st.write(f"**💬 Jawaban:** {a}")
             st.write(f"📈 Similarity: `{score:.5f}`")
 
 st.divider()
