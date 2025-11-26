@@ -19,7 +19,7 @@ from nltk.stem import PorterStemmer
 #     ⬇ BAGIAN DATASET (DARI KODE KEDUA)
 # ===========================================
 
-DATA_PATH = r"C:\Users\mzaid\OneDrive\Documents\TugasU\ChatbotILKOM\translated_computer_science_dataset.csv"
+DATA_PATH = r"DATA_PATH = "translated_computer_science_dataset.csv""
 
 @st.cache_data
 def load_dataset(path=DATA_PATH):
@@ -125,3 +125,4 @@ if st.button("💬 Kirim Pertanyaan"):
 
 st.divider()
 st.caption("© 2025 Chatbot Ilmu Komputer | Kelompok 11")
+
