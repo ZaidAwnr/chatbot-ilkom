@@ -17,7 +17,7 @@ from nltk.stem import PorterStemmer
 
 
 # ======================================================
-#               LOAD DATASET (VERSI FIX)
+#               LOAD DATASET (VERSI SUPER FIX)
 # ======================================================
 
 DATA_PATH = "translated_computer_science_dataset.csv"
@@ -25,48 +25,48 @@ DATA_PATH = "translated_computer_science_dataset.csv"
 @st.cache_data
 def load_dataset(path=DATA_PATH):
     try:
-        # Baca CSV besar yang mengandung kutip & koma panjang
+        # Membaca CSV dengan perilaku mendekati Windows
         df = pd.read_csv(
             path,
             encoding="utf-8",
-            quotechar='"',
-            escapechar="\\",
-            on_bad_lines="skip",
-            engine="python"
+            engine="python",
+            on_bad_lines="skip"
         )
 
-        # Bersihkan semua nama kolom dari karakter tersembunyi
-        df.columns = (
-            df.columns
-            .str.strip()
-            .str.replace("\r", "", regex=False)
-            .str.replace("\n", "", regex=False)
-            .str.replace("\ufeff", "", regex=False)
-        )
+        # ===== PERBAIKAN HEADER =====
+        cleaned_cols = []
+        for col in df.columns:
+            new_col = (
+                col.strip()
+                .replace("\r", "")
+                .replace("\n", "")
+                .replace("\ufeff", "")
+            )
+            # POTONG kolom yang ada tanda semicolon (karena dataset kamu punya ;;;;;)
+            new_col = new_col.split(";")[0]
+            cleaned_cols.append(new_col)
 
-        # Kolom wajib
-        required = {"input_id", "output_id"}
+        df.columns = cleaned_cols
 
-        if not required.issubset(df.columns):
+        # ===== CEK KEBERADAAN KOLOM =====
+        if "input_id" not in df.columns or "output_id" not in df.columns:
             st.error(f"""
-                ❌ Dataset tidak memiliki kolom lengkap!
+            ❌ Dataset tidak memiliki kolom lengkap!
 
-                Kolom yang ditemukan:
-                {list(df.columns)}
+            Kolom ditemukan: {list(df.columns)}
 
-                Kolom yang dibutuhkan:
-                ['input_id', 'output_id']
+            Kolom wajib: ['input_id', 'output_id']
 
-                Perbaiki dataset Anda.
+            Periksa dataset Anda.
             """)
             st.stop()
 
-        # Kembalikan hanya kolom penting
         return df[["input_id", "output_id"]].dropna().reset_index(drop=True)
 
     except Exception as e:
-        st.error(f"❌ Gagal membaca dataset:\n\n{e}")
+        st.error(f"❌ Gagal membaca dataset: {e}")
         st.stop()
+
 
 
 # ======================================================
@@ -93,6 +93,7 @@ def clean_text(text):
 
     clean = " ".join(tokens_stem)
     return clean, tokens, tokens_clean, tokens_stem, clean
+
 
 
 # ======================================================
@@ -128,6 +129,7 @@ class Chatbot:
         return best_q, best_a, best_score
 
 
+
 # ======================================================
 #                    STREAMLIT UI
 # ======================================================
@@ -135,11 +137,10 @@ class Chatbot:
 st.set_page_config(page_title="Chatbot Ilmu Komputer", page_icon="🤖")
 
 st.title("💬 Chatbot Pembelajaran Ilmu Komputer")
-st.caption("NLTK + TF-IDF + Cosine Similarity • Dataset versi kode kedua")
+st.caption("NLTK + TF-IDF + Cosine Similarity • Dataset fix kolom otomatis")
 st.caption("Kelompok 11")
 
-# Load dataset aman
-df = load_dataset()
+df = load_dataset()  # ---- LOAD FIX ----
 bot = Chatbot(df, threshold=0.25)
 
 st.divider()
@@ -160,7 +161,7 @@ if st.button("💬 Kirim Pertanyaan"):
             st.error(best_a)
             st.markdown(f"📉 **Similarity:** `{score:.5f}`")
         else:
-            st.success("Pertanyaan paling mirip ditemukan!")
+            st.success("Pertanyaan mirip ditemukan!")
             st.markdown(f"**🔎 Pertanyaan mirip:** {best_q}")
             st.markdown(f"**💬 Jawaban:** {best_a}")
             st.markdown(f"📈 **Similarity:** `{score:.5f}`")
