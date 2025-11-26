@@ -15,30 +15,63 @@ from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer
 
-# ===========================================
-#     ⬇ BAGIAN DATASET (DIPERBAIKI)
-# ===========================================
+
+# ======================================================
+#               LOAD DATASET (VERSI FIX)
+# ======================================================
 
 DATA_PATH = "translated_computer_science_dataset.csv"
 
 @st.cache_data
 def load_dataset(path=DATA_PATH):
     try:
-        # Membaca file CSV besar dengan aman
+        # Baca CSV besar yang mengandung kutip & koma panjang
         df = pd.read_csv(
             path,
             encoding="utf-8",
-            on_bad_lines="skip"   # lewati baris rusak
+            quotechar='"',
+            escapechar="\\",
+            on_bad_lines="skip",
+            engine="python"
         )
+
+        # Bersihkan semua nama kolom dari karakter tersembunyi
+        df.columns = (
+            df.columns
+            .str.strip()
+            .str.replace("\r", "", regex=False)
+            .str.replace("\n", "", regex=False)
+            .str.replace("\ufeff", "", regex=False)
+        )
+
+        # Kolom wajib
+        required = {"input_id", "output_id"}
+
+        if not required.issubset(df.columns):
+            st.error(f"""
+                ❌ Dataset tidak memiliki kolom lengkap!
+
+                Kolom yang ditemukan:
+                {list(df.columns)}
+
+                Kolom yang dibutuhkan:
+                ['input_id', 'output_id']
+
+                Perbaiki dataset Anda.
+            """)
+            st.stop()
+
+        # Kembalikan hanya kolom penting
         return df[["input_id", "output_id"]].dropna().reset_index(drop=True)
 
     except Exception as e:
-        st.error(f"❌ Gagal memuat dataset: {e}")
+        st.error(f"❌ Gagal membaca dataset:\n\n{e}")
         st.stop()
 
-# ===========================================
-#           PREPROCESSING
-# ===========================================
+
+# ======================================================
+#                 PREPROCESSING
+# ======================================================
 
 stop_id = set(stopwords.words("indonesian"))
 extra_stop = {"yang", "dan", "di", "ke", "dari", "pada", "untuk", "adalah", "dengan", "atau", "sebagai"}
@@ -61,9 +94,10 @@ def clean_text(text):
     clean = " ".join(tokens_stem)
     return clean, tokens, tokens_clean, tokens_stem, clean
 
-# ===========================================
-#                CHATBOT
-# ===========================================
+
+# ======================================================
+#                      CHATBOT
+# ======================================================
 
 class Chatbot:
     def __init__(self, df, threshold=0.25):
@@ -84,18 +118,19 @@ class Chatbot:
         best_score = sims[best_idx]
 
         if best_score <= 0.007:
-            return None, "⚠️ Pertanyaan Anda di luar konteks pembelajaran ilmu komputer.", best_score
+            return None, "⚠️ Pertanyaan di luar konteks ilmu komputer.", best_score
 
         if best_score < self.threshold:
-            return None, "❌ Maaf, tidak ditemukan jawaban relevan.", best_score
+            return None, "❌ Tidak ditemukan jawaban relevan.", best_score
 
         best_q = self.df.loc[best_idx, "input_id"]
         best_a = self.df.loc[best_idx, "output_id"]
         return best_q, best_a, best_score
 
-# ===========================================
-#               STREAMLIT UI
-# ===========================================
+
+# ======================================================
+#                    STREAMLIT UI
+# ======================================================
 
 st.set_page_config(page_title="Chatbot Ilmu Komputer", page_icon="🤖")
 
@@ -103,7 +138,8 @@ st.title("💬 Chatbot Pembelajaran Ilmu Komputer")
 st.caption("NLTK + TF-IDF + Cosine Similarity • Dataset versi kode kedua")
 st.caption("Kelompok 11")
 
-df = load_dataset()   # load dataset aman
+# Load dataset aman
+df = load_dataset()
 bot = Chatbot(df, threshold=0.25)
 
 st.divider()
@@ -124,7 +160,7 @@ if st.button("💬 Kirim Pertanyaan"):
             st.error(best_a)
             st.markdown(f"📉 **Similarity:** `{score:.5f}`")
         else:
-            st.success("Ditemukan pertanyaan paling mirip!")
+            st.success("Pertanyaan paling mirip ditemukan!")
             st.markdown(f"**🔎 Pertanyaan mirip:** {best_q}")
             st.markdown(f"**💬 Jawaban:** {best_a}")
             st.markdown(f"📈 **Similarity:** `{score:.5f}`")
