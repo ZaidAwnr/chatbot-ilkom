@@ -127,3 +127,4 @@ st.divider()
 st.caption("© 2025 Chatbot Ilmu Komputer | Kelompok 11")
 
 
+
