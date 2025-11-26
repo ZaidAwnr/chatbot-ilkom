@@ -7,17 +7,40 @@ import streamlit as st
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-# --- NLTK Setup ---
-for pkg in ["punkt", "stopwords"]:
-    nltk.download(pkg, quiet=True)
 
+# =========================
+#   NLTK STOPWORDS
+# =========================
+nltk.download("stopwords", quiet=True)
 from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer
 
 
+# ================================
+#      TOKENIZER TANPA PUNKT
+# ================================
+def simple_tokenize(text):
+    """Tokenisasi aman tanpa punkt (agar tidak error di Streamlit Cloud)."""
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return text.split()
+
+
+# ================================
+#          STOPWORDS
+# ================================
+stop_id = set(stopwords.words("indonesian"))
+extra_stop = {
+    "yang", "dan", "di", "ke", "dari", "pada", "untuk",
+    "adalah", "dengan", "atau", "sebagai"
+}
+stop_id = stop_id.union(extra_stop)
+
+stemmer = PorterStemmer()
+
+
 # ======================================================
-#               LOAD DATASET (VERSI SUPER FIX)
+#        LOAD DATASET (VERSI SUPER FIX STREAMLIT)
 # ======================================================
 
 DATA_PATH = "translated_computer_science_dataset.csv"
@@ -25,7 +48,6 @@ DATA_PATH = "translated_computer_science_dataset.csv"
 @st.cache_data
 def load_dataset(path=DATA_PATH):
     try:
-        # Membaca CSV dengan perilaku mendekati Windows
         df = pd.read_csv(
             path,
             encoding="utf-8",
@@ -33,31 +55,29 @@ def load_dataset(path=DATA_PATH):
             on_bad_lines="skip"
         )
 
-        # ===== PERBAIKAN HEADER =====
+        # ===== BERSIHKAN HEADER =====
         cleaned_cols = []
         for col in df.columns:
             new_col = (
                 col.strip()
-                .replace("\r", "")
-                .replace("\n", "")
-                .replace("\ufeff", "")
+                  .replace("\r", "")
+                  .replace("\n", "")
+                  .replace("\ufeff", "")
             )
-            # POTONG kolom yang ada tanda semicolon (karena dataset kamu punya ;;;;;)
-            new_col = new_col.split(";")[0]
+            new_col = new_col.split(";")[0]  # buang karakter ;;;;;;;;
             cleaned_cols.append(new_col)
 
         df.columns = cleaned_cols
 
-        # ===== CEK KEBERADAAN KOLOM =====
+        # cek kolom wajib
         if "input_id" not in df.columns or "output_id" not in df.columns:
             st.error(f"""
             ❌ Dataset tidak memiliki kolom lengkap!
 
-            Kolom ditemukan: {list(df.columns)}
+            Kolom ditemukan:
+            {list(df.columns)}
 
             Kolom wajib: ['input_id', 'output_id']
-
-            Periksa dataset Anda.
             """)
             st.stop()
 
@@ -70,24 +90,17 @@ def load_dataset(path=DATA_PATH):
 
 
 # ======================================================
-#                 PREPROCESSING
+#                  PREPROCESSING
 # ======================================================
-
-stop_id = set(stopwords.words("indonesian"))
-extra_stop = {"yang", "dan", "di", "ke", "dari", "pada", "untuk", "adalah", "dengan", "atau", "sebagai"}
-stop_id = stop_id.union(extra_stop)
-
-stemmer = PorterStemmer()
-
 def clean_text(text):
     if not isinstance(text, str):
         text = str(text)
 
     text = text.lower()
     text = re.sub(r"http\S+|www\S+|\S+@\S+", " ", text)
-    text = re.sub(r"[^0-9a-zA-Z\u00C0-\u024F\u1E00-\u1EFF\s]", " ", text)
+    text = re.sub(r"[^0-9a-zA-Z\s]", " ", text)
 
-    tokens = word_tokenize(text)
+    tokens = simple_tokenize(text)
     tokens_clean = [t for t in tokens if t not in stop_id and len(t) > 1]
     tokens_stem = [stemmer.stem(t) for t in tokens_clean]
 
@@ -97,13 +110,15 @@ def clean_text(text):
 
 
 # ======================================================
-#                      CHATBOT
+#                    CHATBOT CORE
 # ======================================================
 
 class Chatbot:
     def __init__(self, df, threshold=0.25):
         self.df = df.copy()
-        self.df["clean_input"] = self.df["input_id"].apply(lambda x: clean_text(x)[4])
+        self.df["clean_input"] = self.df["input_id"].apply(
+            lambda x: clean_text(x)[4]
+        )
 
         self.vectorizer = TfidfVectorizer(ngram_range=(1, 2))
         self.tfidf_matrix = self.vectorizer.fit_transform(self.df["clean_input"])
@@ -131,19 +146,20 @@ class Chatbot:
 
 
 # ======================================================
-#                    STREAMLIT UI
+#                STREAMLIT USER INTERFACE
 # ======================================================
 
 st.set_page_config(page_title="Chatbot Ilmu Komputer", page_icon="🤖")
 
 st.title("💬 Chatbot Pembelajaran Ilmu Komputer")
-st.caption("NLTK + TF-IDF + Cosine Similarity • Dataset fix kolom otomatis")
+st.caption("NLTK + TF-IDF + Cosine Similarity • Dataset versi final")
 st.caption("Kelompok 11")
 
-df = load_dataset()  # ---- LOAD FIX ----
+df = load_dataset()
 bot = Chatbot(df, threshold=0.25)
 
 st.divider()
+
 user_input = st.text_area("Ketik pertanyaan Anda:", height=100)
 
 if st.button("💬 Kirim Pertanyaan"):
@@ -153,7 +169,9 @@ if st.button("💬 Kirim Pertanyaan"):
         with st.spinner("Mencari jawaban terbaik..."):
             result = bot.get_response(user_input)
 
-        best_q, best_a, score = result if result[0] else (None, result[1], result[2])
+        best_q, best_a, score = (
+            result if result[0] else (None, result[1], result[2])
+        )
 
         st.subheader("📌 Hasil")
 
@@ -161,7 +179,7 @@ if st.button("💬 Kirim Pertanyaan"):
             st.error(best_a)
             st.markdown(f"📉 **Similarity:** `{score:.5f}`")
         else:
-            st.success("Pertanyaan mirip ditemukan!")
+            st.success("Pertanyaan paling mirip ditemukan!")
             st.markdown(f"**🔎 Pertanyaan mirip:** {best_q}")
             st.markdown(f"**💬 Jawaban:** {best_a}")
             st.markdown(f"📈 **Similarity:** `{score:.5f}`")
