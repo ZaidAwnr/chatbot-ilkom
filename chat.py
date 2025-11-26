@@ -16,30 +16,36 @@ from nltk.tokenize import word_tokenize
 from nltk.stem import PorterStemmer
 
 # ===========================================
-#     ⬇ BAGIAN DATASET (DARI KODE KEDUA)
+#     ⬇ BAGIAN DATASET (DIPERBAIKI)
 # ===========================================
 
 DATA_PATH = "translated_computer_science_dataset.csv"
 
 @st.cache_data
 def load_dataset(path=DATA_PATH):
-    df = pd.read_csv(path)
-    return df[["input_id", "output_id"]].dropna().reset_index(drop=True)
+    try:
+        # Membaca file CSV besar dengan aman
+        df = pd.read_csv(
+            path,
+            encoding="utf-8",
+            on_bad_lines="skip"   # lewati baris rusak
+        )
+        return df[["input_id", "output_id"]].dropna().reset_index(drop=True)
+
+    except Exception as e:
+        st.error(f"❌ Gagal memuat dataset: {e}")
+        st.stop()
 
 # ===========================================
-#     ⬆ HANYA BAGIAN INI YANG DIGANTI
+#           PREPROCESSING
 # ===========================================
 
-
-# --- Stopword Bahasa Indonesia (kode pertama) ---
 stop_id = set(stopwords.words("indonesian"))
 extra_stop = {"yang", "dan", "di", "ke", "dari", "pada", "untuk", "adalah", "dengan", "atau", "sebagai"}
 stop_id = stop_id.union(extra_stop)
 
-# --- Stemmer (kode pertama) ---
 stemmer = PorterStemmer()
 
-# --- Preprocessing (kode pertama) ---
 def clean_text(text):
     if not isinstance(text, str):
         text = str(text)
@@ -55,7 +61,10 @@ def clean_text(text):
     clean = " ".join(tokens_stem)
     return clean, tokens, tokens_clean, tokens_stem, clean
 
-# --- Chatbot Class (kode pertama) ---
+# ===========================================
+#                CHATBOT
+# ===========================================
+
 class Chatbot:
     def __init__(self, df, threshold=0.25):
         self.df = df.copy()
@@ -74,11 +83,9 @@ class Chatbot:
         best_idx = np.argmax(sims)
         best_score = sims[best_idx]
 
-        # Jika pertanyaan di luar konteks
         if best_score <= 0.007:
             return None, "⚠️ Pertanyaan Anda di luar konteks pembelajaran ilmu komputer.", best_score
 
-        # Jika similarity rendah
         if best_score < self.threshold:
             return None, "❌ Maaf, tidak ditemukan jawaban relevan.", best_score
 
@@ -86,17 +93,17 @@ class Chatbot:
         best_a = self.df.loc[best_idx, "output_id"]
         return best_q, best_a, best_score
 
+# ===========================================
+#               STREAMLIT UI
+# ===========================================
 
-# =============================
-#       STREAMLIT UI
-# =============================
 st.set_page_config(page_title="Chatbot Ilmu Komputer", page_icon="🤖")
 
 st.title("💬 Chatbot Pembelajaran Ilmu Komputer")
 st.caption("NLTK + TF-IDF + Cosine Similarity • Dataset versi kode kedua")
 st.caption("Kelompok 11")
 
-df = load_dataset()
+df = load_dataset()   # load dataset aman
 bot = Chatbot(df, threshold=0.25)
 
 st.divider()
@@ -113,7 +120,6 @@ if st.button("💬 Kirim Pertanyaan"):
 
         st.subheader("📌 Hasil")
 
-        # Jika tidak relevan
         if best_q is None:
             st.error(best_a)
             st.markdown(f"📉 **Similarity:** `{score:.5f}`")
@@ -125,6 +131,3 @@ if st.button("💬 Kirim Pertanyaan"):
 
 st.divider()
 st.caption("© 2025 Chatbot Ilmu Komputer | Kelompok 11")
-
-
-
